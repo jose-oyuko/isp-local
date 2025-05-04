@@ -8,6 +8,7 @@ from mikrotik import Mikrotik
 import json
 import os
 from dotenv import load_dotenv
+import traceback
 
 # Load environment variables
 load_dotenv()
@@ -30,20 +31,39 @@ def execute_command(command_data):
         command_params = command_data.get('params', {})
 
         if command_type == 'add_user':
+            logger.debug(f"Adding user with params: {command_params}")
+            # return
+            print("adding user to mikrotik", command_params)
             username = command_params.get('username')
             password = command_params.get('password')
-            time_limit = command_params.get('time_limit')
+            time_limit = command_params.get('time')
             if all([username, password, time_limit]):
+
+                router=Mikrotik()
                 router.add_user(username, password, time_limit)
+                logger.info(f"User {username} added successfully")  
                 return {"status": "success", "message": f"User {username} added successfully"}
             else:
                 return {"status": "error", "message": "Missing required parameters for add_user"}
 
         elif command_type == 'login_user':
+            print("in login user command")
             mac = command_params.get('mac')
             ip = command_params.get('ip')
+            time = command_params.get('time')
             if all([mac, ip]):
-                router.login_user(mac, ip)
+                logger.info(f"Logging in user with MAC: {mac}, IP: {ip}")
+                # return
+                # router.login_user(mac, ip)
+                router = Mikrotik()
+                try:
+                    router.login_user(mac=mac, ip=ip)
+                except Mikrotik.ReAddUserError:
+                    logger.warning(f"User {mac} already exists, re-adding user")
+                    router.add_user(username=mac, password=mac, time=time)
+                    router.login_user(mac=mac, ip=ip)
+                logger.info(f"User {mac} logged in successfully")
+               
                 return {"status": "success", "message": f"User {mac} logged in successfully"}
             else:
                 return {"status": "error", "message": "Missing required parameters for login_user"}
@@ -53,15 +73,15 @@ def execute_command(command_data):
 
     except Exception as e:
         logger.error(f"Error executing command: {str(e)}")
+        traceback.print_exc()
         return {"status": "error", "message": str(e)}
 
 def report_status(command_id, status_data):
     """Report command execution status back to Django server"""
     try:
         response = requests.post(
-            f"{DJANGO_SERVER_URL}report_status/",
+            f"{DJANGO_SERVER_URL}api/commands/status/",
             json={
-                "device_id": DEVICE_ID,
                 "command_id": command_id,
                 "status": status_data
             }
@@ -77,24 +97,32 @@ def poll_command():
         try:
             # Get commands from Django server
             response = requests.get(
-                f"{DJANGO_SERVER_URL}get_commands/",
-                params={"device_id": DEVICE_ID}
+                f"{DJANGO_SERVER_URL}api/commands/"
             )
             response.raise_for_status()
             commands = response.json()
+            commands = commands.get('commands', [])
+            logger.debug(f"Received commands: {commands}")
 
             # Process each command
-            for command in commands:
-                command_id = command.get('id')
-                command_data = command.get('data', {})
-                
-                logger.info(f"Processing command {command_id}: {command_data}")
-                
-                # Execute command
-                result = execute_command(command_data)
-                
-                # Report status back to Django
-                report_status(command_id, result)
+            if isinstance(commands, list):  # Check if response is a list
+
+                # Sort the list by 'id'
+                commands = sorted(commands, key=lambda x: x.get('id', 0))
+                for command in commands:
+                    command_id = command.get('id')
+                    print(f"executing command {command_id}")
+                    command_data = command.get('data', {})
+                    
+                    logger.info(f"Processing command {command_id}: {command_data}")
+                    
+                    # Execute command
+                    result = execute_command(command_data)
+                    
+                    # Report status back to Django
+                    report_status(command_id, result)
+            else:
+                logger.warning(f"Unexpected response format: {commands}")
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error while polling: {str(e)}")
@@ -103,13 +131,10 @@ def poll_command():
         
         time.sleep(POLL_INTERVAL)
 
-@app.before_first_request
-def start_polling():
-    """Start the polling thread when the Flask app starts"""
-    logger.info(f"Starting polling thread for device: {DEVICE_ID}")
-    thread = threading.Thread(target=poll_command)
-    thread.daemon = True
-    thread.start()
+# Start the polling thread when the app is created
+thread = threading.Thread(target=poll_command)
+thread.daemon = True
+thread.start()
 
 @app.route('/status', methods=['GET'])
 def status():

@@ -81,6 +81,7 @@ class Mikrotik:
             raise
 
     def add_user(self, username, password, time):
+        print("inside mikrotik add user method")
         logger.info(f"Attempting to add user - Username: {username}, Time limit: {time}")
         try:
             if self.user_exists(username):
@@ -113,8 +114,9 @@ class Mikrotik:
             return True
         except Exception as e:
             error_message = str(e)
-            if "user uptime reached" in error_message.lower():
+            if "your uptime limit is reached" in error_message.lower():
                 logger.warning(f"User uptime limit reached - MAC: {mac}, IP: {ip}")
+                raise Mikrotik.ReAddUserError(f"Readd user")
             elif "no such user" in error_message.lower():
                 logger.warning(f"User not found on router - MAC: {mac}, IP: {ip}")
             elif "connection refused" in error_message.lower():

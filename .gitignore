@@ -3,3 +3,13 @@
 
 # .env
 .env
+
+/logs
+
+models.py
+serializers.py
+urls.py
+views.py
+
+*.pyc
+__pycache__/
