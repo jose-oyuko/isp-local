@@ -20,6 +20,8 @@ setup_logging(app)
 DJANGO_SERVER_URL = os.getenv('DJANGO_SERVER_URL')
 DEVICE_ID = os.getenv('DEVICE_ID', 'default_device')
 POLL_INTERVAL = int(os.getenv('POLL_INTERVAL', '30'))
+DJANGO_USERNAME = os.getenv('DJANGO_USERNAME')
+DJANGO_PASSWORD = os.getenv('DJANGO_PASSWORD')
 
 # Initialize Mikrotik connection
 router = Mikrotik()
@@ -84,7 +86,8 @@ def report_status(command_id, status_data):
             json={
                 "command_id": command_id,
                 "status": status_data
-            }
+            },
+            auth=(DJANGO_USERNAME, DJANGO_PASSWORD)
         )
         response.raise_for_status()
         logger.info(f"Status reported successfully for command {command_id}")
@@ -97,7 +100,7 @@ def poll_command():
         try:
             # Get commands from Django server
             response = requests.get(
-                f"{DJANGO_SERVER_URL}api/commands/"
+                f"{DJANGO_SERVER_URL}api/commands/", auth=(DJANGO_USERNAME, DJANGO_PASSWORD)
             )
             response.raise_for_status()
             commands = response.json()
