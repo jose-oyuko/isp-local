@@ -155,5 +155,5 @@ class Mikrotik:
                 logger.error(f"Login failed - MAC: {mac}, IP: {ip}, Error: {error_message}")
             raise
 
-router = Mikrotik()
-router.remove_active_session_by_ip("192.168.78.253")
+# router = Mikrotik()
+# router.remove_active_session_by_ip("192.168.78.253")
