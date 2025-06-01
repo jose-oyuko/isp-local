@@ -4,6 +4,7 @@ import re
 from datetime import timedelta
 from dotenv import load_dotenv
 from loguru import logger
+import routeros_api.exceptions
 
 # Load environment variables
 load_dotenv()
@@ -30,6 +31,33 @@ class Mikrotik:
         if missing_settings:
             raise MikrotikConfigError(f"Missing required Mikrotik settings: {', '.join(missing_settings)}")
         logger.debug("Mikrotik configuration validated successfully")
+
+    def remove_active_session_by_ip(self, ip):
+        logger.info(f"Attempting to remove active session for IP: {ip}")
+        try:
+            api = self.get_mt_api()
+            active_sessions = api.get_resource('/ip/hotspot/active').get(address=ip)
+            logger.debug(f"Active sessions found for IP {ip}: {active_sessions}")
+            if not active_sessions:
+                logger.info(f"No active sessions found for IP: {ip}")
+                return True
+            
+            # remove each session
+            for session in active_sessions:
+                session_id = session.get('id')
+                if session_id:
+                    logger.info(f"Removing active session for IP: {ip}, Session ID: {session_id}")
+                    api.get_resource('/ip/hotspot/active').call('remove', {'id': session_id})
+                    logger.success(f"Successfully removed active sessions for IP: {ip}")
+                else:
+                    logger.warning(f"Session ID not found for IP: {ip}, skipping removal")
+            return True
+        except routeros_api.exceptions.RouterOsApiCommunicationError as e:
+            logger.error(f"Failed to remove active session for IP {ip}: {str(e)}")
+            return False
+        except Exception as e:
+            logger.error(f"An error occurred while removing active session for IP {ip}: {str(e)}")
+            return False
 
     def get_mt_api(self):
         logger.debug(f"Attempting to connect to Mikrotik router at {self.mikrotik_ip}")
@@ -81,7 +109,6 @@ class Mikrotik:
             raise
 
     def add_user(self, username, password, time):
-        print("inside mikrotik add user method")
         logger.info(f"Attempting to add user - Username: {username}, Time limit: {time}")
         try:
             if self.user_exists(username):
@@ -103,6 +130,9 @@ class Mikrotik:
     def login_user(self, mac, ip):
         logger.info(f"Attempting to login user - MAC: {mac}, IP: {ip}")
         try:
+            if not self.remove_active_session_by_ip(ip):
+                logger.warning(f"Proceeding with login for MAC {mac} and {ip} despite session removal failure")
+        
             api = self.get_mt_api()
             api.get_resource('/ip/hotspot/active').call('login', {
                 'user': mac,
@@ -124,3 +154,6 @@ class Mikrotik:
             else:
                 logger.error(f"Login failed - MAC: {mac}, IP: {ip}, Error: {error_message}")
             raise
+
+router = Mikrotik()
+router.remove_active_session_by_ip("192.168.78.253")

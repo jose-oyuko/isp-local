@@ -1,5 +1,5 @@
 from flask import Flask, jsonify
-import requests
+import requests, sys, signal
 import time
 import threading
 from loguru import logger
@@ -19,12 +19,18 @@ setup_logging(app)
 # Configuration
 DJANGO_SERVER_URL = os.getenv('DJANGO_SERVER_URL')
 DEVICE_ID = os.getenv('DEVICE_ID', 'default_device')
-POLL_INTERVAL = int(os.getenv('POLL_INTERVAL', '30'))
+POLL_INTERVAL = int(os.getenv('POLL_INTERVAL', '3'))
 DJANGO_USERNAME = os.getenv('DJANGO_USERNAME')
 DJANGO_PASSWORD = os.getenv('DJANGO_PASSWORD')
 
 # Initialize Mikrotik connection
 router = Mikrotik()
+
+def signal_handler(sig, frame):
+    logger.info("Shutting down gracefully...")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
 
 def execute_command(command_data):
     """Execute commands received from Django server"""
@@ -35,7 +41,6 @@ def execute_command(command_data):
         if command_type == 'add_user':
             logger.debug(f"Adding user with params: {command_params}")
             # return
-            print("adding user to mikrotik", command_params)
             username = command_params.get('username')
             password = command_params.get('password')
             time_limit = command_params.get('time')
@@ -114,7 +119,6 @@ def poll_command():
                 commands = sorted(commands, key=lambda x: x.get('id', 0))
                 for command in commands:
                     command_id = command.get('id')
-                    print(f"executing command {command_id}")
                     command_data = command.get('data', {})
                     
                     logger.info(f"Processing command {command_id}: {command_data}")
@@ -151,4 +155,4 @@ def status():
 
 if __name__ == '__main__':
     logger.info("Starting Flask application")
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000,use_reloader=False)
