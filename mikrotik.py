@@ -32,6 +32,32 @@ class Mikrotik:
             raise MikrotikConfigError(f"Missing required Mikrotik settings: {', '.join(missing_settings)}")
         logger.debug("Mikrotik configuration validated successfully")
 
+    def remove_active_session_by_mac(self, mac):
+        logger.info(f"Attempting to remove active sessions for MAC: {mac}")
+        try:
+            api = self.get_mt_api()
+            active_sessions = api.get_resource('/ip/hotspot/active').get(mac_address=mac)
+            logger.debug(f"active sessions found for MAC {mac}: {active_sessions}")
+            if not active_sessions:
+                logger.info(f"No active sessionns found for MAC: {mac}")
+                return True
+            
+            for session in active_sessions:
+                session_id = session.get('id')
+                if session_id:
+                    logger.info(f"Removing active session for MAC: {mac}, sessions ID: {session_id}")
+                    api.get_resource('/ip/hotspot/active').call('remove', {'id': session_id})
+                    logger.success(f"Successfully removed active sessions for MAC: {mac}")
+                else:
+                    logger.warning(f"Session ID not found for MAC: {mac}, skipping removal")
+            return True
+        except routeros_api.exceptions.RouterOsApiCommunicationError as e:
+            logger.error(f"Failed to remove active session for MAC {mac}: {str(e)}")
+            return False
+        except Exception as e:
+            logger.error(f"An error occurred while removing active session for MAC {mac}: {str(e)}")
+            return False
+
     def remove_active_session_by_ip(self, ip):
         logger.info(f"Attempting to remove active session for IP: {ip}")
         try:
@@ -128,12 +154,22 @@ class Mikrotik:
             raise
 
     def login_user(self, mac, ip):
-        logger.info(f"Attempting to login user - MAC: {mac}, IP: {ip}")
+        # change to login by ip only to solve reassignment of ip issues
+        logger.info(f"Attempting to login user - MAC: {mac},")
         try:
-            if not self.remove_active_session_by_ip(ip):
+            # if not self.remove_active_session_by_ip(ip):
+            if not self.remove_active_session_by_mac(mac):
                 logger.warning(f"Proceeding with login for MAC {mac} and {ip} despite session removal failure")
         
             api = self.get_mt_api()
+            active_list = api.get_resource('/ip/hotspot/active').get(mac_address=mac)
+            logger.debug(f"Host list entry for mac {mac}: {active_list}")
+            if not active_list:
+                logger.error(f"could not find host entry for mac {mac}, cannot login user")
+                raise Exception(f"Host entry not found for MAC {mac}")
+            
+            ip = active_list[0]['address']
+            logger.debug(f"Using IP {ip} for login based on active session for MAC {mac}")
             api.get_resource('/ip/hotspot/active').call('login', {
                 'user': mac,
                 'password': mac,
