@@ -162,7 +162,7 @@ class Mikrotik:
                 logger.warning(f"Proceeding with login for MAC {mac} and {ip} despite session removal failure")
         
             api = self.get_mt_api()
-            active_list = api.get_resource('/ip/hotspot/active').get(mac_address=mac)
+            active_list = api.get_resource('/ip/hotspot/host').get(mac_address=mac)
             logger.debug(f"Host list entry for mac {mac}: {active_list}")
             if not active_list:
                 logger.error(f"could not find host entry for mac {mac}, cannot login user")
