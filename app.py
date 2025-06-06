@@ -101,6 +101,10 @@ def report_status(command_id, status_data):
 
 def poll_command():
     """Poll Django server for commands and execute them"""
+    logger.info("polling thread started")
+    if not DJANGO_SERVER_URL or not DJANGO_USERNAME or not DJANGO_PASSWORD:
+        logger.error("Django server URL, username, or password not set. Exiting polling thread.")
+        return
     while True:
         try:
             # Get commands from Django server
