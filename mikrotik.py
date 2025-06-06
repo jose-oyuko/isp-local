@@ -33,29 +33,42 @@ class Mikrotik:
         logger.debug("Mikrotik configuration validated successfully")
 
     def remove_active_session_by_mac(self, mac):
+        """
+        Remove any active hotspot session associated with the given MAC address.
+        
+        Args:
+            mac (str): The MAC address (e.g., '6A:7C:66:16:85:ED').
+        
+        Returns:
+            bool: True if session was removed or none existed, False if removal failed.
+        """
         logger.info(f"Attempting to remove active sessions for MAC: {mac}")
         try:
             api = self.get_mt_api()
-            active_sessions = api.get_resource('/ip/hotspot/active').get(mac_address=mac)
-            logger.debug(f"active sessions found for MAC {mac}: {active_sessions}")
-            if not active_sessions:
-                logger.info(f"No active sessionns found for MAC: {mac}")
+            # Query all active sessions and filter by mac-address
+            active_sessions = api.get_resource('/ip/hotspot/active').get()
+            logger.debug(f"All active sessions: {active_sessions}")
+            matching_sessions = [s for s in active_sessions if s.get('mac-address', '').lower() == mac.lower()]
+            logger.debug(f"Matching sessions for MAC {mac}: {matching_sessions}")
+
+            if not matching_sessions:
+                logger.info(f"No active sessions found for MAC: {mac}")
                 return True
             
-            for session in active_sessions:
+            for session in matching_sessions:
                 session_id = session.get('id')
                 if session_id:
-                    logger.info(f"Removing active session for MAC: {mac}, sessions ID: {session_id}")
+                    logger.info(f"Removing active session for MAC: {mac}, Session ID: {session_id}")
                     api.get_resource('/ip/hotspot/active').call('remove', {'id': session_id})
-                    logger.success(f"Successfully removed active sessions for MAC: {mac}")
+                    logger.success(f"Successfully removed session ID: {session_id}")
                 else:
-                    logger.warning(f"Session ID not found for MAC: {mac}, skipping removal")
+                    logger.warning(f"Session for MAC {mac} has no ID, skipping removal")
             return True
         except routeros_api.exceptions.RouterOsApiCommunicationError as e:
             logger.error(f"Failed to remove active session for MAC {mac}: {str(e)}")
             return False
         except Exception as e:
-            logger.error(f"An error occurred while removing active session for MAC {mac}: {str(e)}")
+            logger.error(f"Unexpected error removing active session for MAC {mac}: {str(e)}")
             return False
 
     def remove_active_session_by_ip(self, ip):
@@ -153,43 +166,74 @@ class Mikrotik:
             logger.error(f"Failed to add user - Username: {username}. Error: {str(e)}")
             raise
 
-    def login_user(self, mac, ip):
-        # change to login by ip only to solve reassignment of ip issues
-        logger.info(f"Attempting to login user - MAC: {mac},")
-        try:
-            # if not self.remove_active_session_by_ip(ip):
-            if not self.remove_active_session_by_mac(mac):
-                logger.warning(f"Proceeding with login for MAC {mac} and {ip} despite session removal failure")
+    def login_user(self, mac, ip=None):
+        """
+        Log in a user to the hotspot using their MAC address.
         
+        Args:
+            mac (str): The MAC address (e.g., '6A:7C:66:16:85:ED').
+            IP (str): Optional. IP address to use for login. If None, queries /ip/hotspot/host.
+        
+        Returns:
+            bool: True if login succeeds.
+        
+        Raises:
+            Exception: If login fails.
+        """
+        logger.info(f"Attempting to login user - MAC: {mac}")
+        try:
+            # Remove any existing session
+            if not self.remove_active_session_by_mac(mac):
+                logger.warning(f"Proceeding with login for MAC {mac} despite session removal failure")
+
             api = self.get_mt_api()
-            active_list = api.get_resource('/ip/hotspot/host').get(mac_address=mac)
-            logger.debug(f"Host list entry for mac {mac}: {active_list}")
-            if not active_list:
-                logger.error(f"could not find host entry for mac {mac}, cannot login user")
+            # Query host list for IP
+            active_hosts = api.get_resource('/ip/hotspot/host').get()
+            matching_hosts = [h for h in active_hosts if h.get('mac-address', '').lower() == mac.lower()]
+            logger.debug(f"Host list for MAC: {mac}: {matching_hosts}")
+
+            if not matching_hosts:
+                logger.error(f"Could not find host entry for MAC {mac}, cannot login user")
                 raise Exception(f"Host entry not found for MAC {mac}")
-            
-            ip = active_list[0]['address']
-            logger.debug(f"Using IP {ip} for login based on active session for MAC {mac}")
+
+            # Use to-address if available, else address
+            host = matching_hosts[0]
+            login_ip = str(host.get('to-address', host.get('address', '')))
+            if not login_ip:
+                logger.error(f"No valid IP found for MAC {mac} in host entry: {host}")
+                raise Exception(f"No valid IP found for MAC {mac}")
+            logger.debug(f"Using IP {login_ip} for login based on host entry for MAC {mac}")
+
+            # # Verify user exists
+            # if not self.user_exists(mac):
+            #     logger.warning(f"User {mac} not found, attempting to add")
+                # self.add_user(mac, mac, '4h')  # Default 4h limit, adjust as per your logic
+
             api.get_resource('/ip/hotspot/active').call('login', {
                 'user': mac,
                 'password': mac,
                 'mac-address': mac,
-                'ip': ip
+                'ip': login_ip
             })
-            logger.success(f"User successfully logged in - MAC: {mac}, IP: {ip}")
+            logger.success(f"User successfully logged in in - MAC {mac}, IP: {login_ip}")
             return True
         except Exception as e:
-            error_message = str(e)
-            if "your uptime limit is reached" in error_message.lower():
-                logger.warning(f"User uptime limit reached - MAC: {mac}, IP: {ip}")
-                raise Mikrotik.ReAddUserError(f"Readd user")
-            elif "no such user" in error_message.lower():
-                logger.warning(f"User not found on router - MAC: {mac}, IP: {ip}")
-            elif "connection refused" in error_message.lower():
-                logger.error(f"Router connection refused - MAC: {mac}, IP: {ip}")
+            error_message = str(e).lower()
+            if "your uptime limit reached" in error_message:
+                logger.warning(f"User uptime limit reached - MAC: {mac}, IP: {login_ip}")
+                raise self.ReAddUserError("Readd user")
+            elif "no such user" in error_message:
+                logger.warning(f"User not found on on router - - MAC: {mac}, IP: {login_ip}")
+                raise Exception(f"User not found: {mac}")
+            elif "connection refused" in error_message:
+                logger.error(f"Router connection refused - - MAC: {mac}, IP: {error_message}")
+                raise
+            elif "unknown host" in error_message:
+                logger.error(f"Unknown host IP {login_ip} for MAC {mac}: {error_message}")
+                raise Exception(f"Unknown host IP: {login_ip}")
             else:
-                logger.error(f"Login failed - MAC: {mac}, IP: {ip}, Error: {error_message}")
-            raise
+                logger.error(f"Login failed - - MAC: {mac}, IP: {login_ip}, Error: {error_message}")
+                raise
 
 # router = Mikrotik()
 # router.remove_active_session_by_ip("192.168.78.253")
