@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from loguru import logger
 
-def setup_logging(app):
+def setup_logging():
     # Create logs directory if it doesn't exist
     if not os.path.exists('logs'):
         os.makedirs('logs')
@@ -14,7 +14,7 @@ def setup_logging(app):
     log_file = os.path.join('logs', f'mikrotik_{datetime.now().strftime("%Y%m%d")}.log')
     logger.add(
         log_file,
-        rotation="500 MB",
+        rotation="5 MB",
         retention="10 days",
         level="DEBUG",
         format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name} | {message}"

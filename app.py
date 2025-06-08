@@ -14,7 +14,7 @@ import traceback
 load_dotenv()
 
 app = Flask(__name__)
-setup_logging(app)
+# setup_logging(app)
 
 # Configuration
 DJANGO_SERVER_URL = os.getenv('DJANGO_SERVER_URL')
@@ -34,6 +34,7 @@ signal.signal(signal.SIGINT, signal_handler)
 
 def execute_command(command_data):
     """Execute commands received from Django server"""
+    setup_logging()  # Ensure logging is set up for each command execution
     try:
         command_type = command_data.get('type')
         command_params = command_data.get('params', {})
@@ -54,7 +55,7 @@ def execute_command(command_data):
                 return {"status": "error", "message": "Missing required parameters for add_user"}
 
         elif command_type == 'login_user':
-            print("in login user command")
+            # print("in login user command")
             mac = command_params.get('mac')
             ip = command_params.get('ip')
             time = command_params.get('time')

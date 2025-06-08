@@ -124,6 +124,32 @@ class Mikrotik:
         for num, unit in matches:
             total_seconds += int(num) * time_units[unit]
         return total_seconds
+    
+    def remove_existing_user(self, username):
+        """
+        Remove an existing user if they exist.
+        
+        Args:
+            username (str): The username to remove.
+        
+        Returns:
+            bool: True if user was removed, False if user did not exist.
+        """
+        logger.info(f"Attempting to remove existing user - Username: {username}")
+        try:
+            api = self.get_mt_api()
+            user_resource = api.get_resource('/ip/hotspot/user')
+            existing_users = user_resource.get(name=username)
+            logger.debug(f"Existing users found: {existing_users}")
+            if existing_users:
+                user_resource.call('remove', {'numbers': existing_users[0]['id']})
+                logger.success(f"Successfully removed user: {username}")
+                return True
+            logger.info(f"No existing user found to remove - Username: {username}")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to remove existing user - Username: {username}. Error: {str(e)}")
+            raise
 
     def user_exists(self, username):
         logger.debug(f"Checking if user exists - Username: {username}")
@@ -131,6 +157,7 @@ class Mikrotik:
             api = self.get_mt_api()
             user_resource = api.get_resource('/ip/hotspot/user')
             existing_users = user_resource.get(name=username)
+            logger.debug(f"Existing users found: {existing_users}")
             if existing_users:
                 user_details = existing_users[0]  # First matching user
                 uptime = self._parse_mikrotik_time(user_details.get('uptime', '0s'))
@@ -150,9 +177,7 @@ class Mikrotik:
     def add_user(self, username, password, time):
         logger.info(f"Attempting to add user - Username: {username}, Time limit: {time}")
         try:
-            if self.user_exists(username):
-                logger.info(f"User already exists and is not expired - Username: {username}")
-                return
+            self.remove_existing_user(username)  # Ensure no existing user with same name
             
             api = self.get_mt_api()
             api.get_resource('/ip/hotspot/user').call('add', {
