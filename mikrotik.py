@@ -151,6 +151,32 @@ class Mikrotik:
             logger.error(f"Failed to remove existing user - Username: {username}. Error: {str(e)}")
             raise
 
+    def disconect_active_hotspot_user(self, username):
+        """
+        Disconnect an active hotspot user by username.
+        
+        Args:
+            username (str): The username of the user to disconnect.
+        
+        Returns:
+            bool: True if user was disconnected, False if user did not exist or was not active.
+        """
+        logger.info(f"Attempting to disconnect active hotspot user - Username: {username}")
+        try:
+            api = self.get_mt_api()
+            active_users = api.get_resource('/ip/hotspot/active').get(user=username)
+            logger.debug(f"Active users found: {active_users}")
+            if active_users:
+                for user in active_users:
+                    api.get_resource('/ip/hotspot/active').call('remove', {'id': user['id']})
+                logger.success(f"Successfully disconnected user: {username}")
+                return True
+            logger.info(f"No active user found to disconnect - Username: {username}")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to disconnect active hotspot user - Username: {username}. Error: {str(e)}")
+            raise
+
     def user_exists(self, username):
         logger.debug(f"Checking if user exists - Username: {username}")
         try:

@@ -75,6 +75,20 @@ def execute_command(command_data):
                 return {"status": "success", "message": f"User {mac} logged in successfully"}
             else:
                 return {"status": "error", "message": "Missing required parameters for login_user"}
+            
+        elif command_type == 'logout_user':
+            mac = command_params.get('mac')
+            if mac:
+                logger.info(f"Logging out user with MAC: {mac}")
+                router = Mikrotik()
+                router.remove_existing_user(mac)
+                router.remove_active_session_by_mac(mac)
+                logger.info(f"User {mac} logged out successfully")
+                return {"status": "success", "message": f"User {mac} logged out successfully"}
+            else:
+                return {"status": "error", "message": "Missing required parameters for logout_user"}
+        
+                
 
         else:
             return {"status": "error", "message": f"Unknown command type: {command_type}"}
